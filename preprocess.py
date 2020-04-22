@@ -77,8 +77,10 @@ def load_as_triple(kb_json):
     return triples, entities, relations
 
 
-def read_KB(KB_file, entities, relations):
+def read_KB(KB_file):
     # example in KB_file: KBs.txt h \t r \t t
+    entities = set()
+    relations = set()
     if os.path.isfile(KB_file):
         with open(KB_file) as f:
             lines = f.readlines()
@@ -90,44 +92,30 @@ def read_KB(KB_file, entities, relations):
         entities.add(line[0])
         entities.add(line[2])
         relations.add(line[1])
+    return entities, relations
 
 
 def get_KB(KB_file, ent2id, rel2id):
     nwords = len(ent2id)
     nrels = len(rel2id)
     tails = np.zeros([nwords*nrels, 1], 'int32')
-    #KBmatrix = np.zeros([nwords, nrels,nwords], 'int32')
     KBmatrix = np.zeros([nwords * nrels, nwords], 'int32')
     Triples = []
 
     f = open(KB_file)
-    control = 1
-    b = 0
     for line in f.readlines():
         line = line.strip().split('\t')
-
-        '''  delete half triples
-        control += 1
-        if control % 2 == 0:
-            b += 1
-            continue
-        '''
-
         h = ent2id[line[0]]
         r = rel2id[line[1]]
         t = ent2id[line[2]]
         Triples.append([h, r, t])
-        # [h,r]->[h*nrels+r]
         lenlist = tails[h*nrels+r]
         KBmatrix[h*nrels+r, lenlist] = t
         tails[h*nrels+r] += 1
-
-    print "delete triples:", b
-
     return np.array(Triples), KBmatrix[:, :np.max(tails)], np.max(tails)
 
 
-def read_data(data_file, words):
+def read_data(data_file):
     # q+'\t'+ans+'\t'+p+'\t'+ansset+'\t'+c+'\t'+sub+'\n'
     # question \t ans(ans1/ans2/) \t e1#r1#e2#r2#e3#<end>#e3
     # question \t  ans  \t  e1#r1#e2#r2#e3#<end>#e3  \t   ans1/ans2/   \t   e1#r1#e2///e2#r2#e3#///s#r#t///s#r#t
@@ -138,6 +126,7 @@ def read_data(data_file, words):
     else:
         raise Exception("!! %s is not found!!" % data_file)
 
+    words = set()
     data = []
     questions = []
     doc = []
@@ -154,13 +143,14 @@ def read_data(data_file, words):
         else:
             asset = line[3]
         data.append([line[0], line[1], line[2], asset])
+
         for w in qlist:
             words.add(w)
         questions.append(qlist)
 
     sentence_size = max(len(i) for i in questions)
 
-    return data, sentence_size
+    return words, data, sentence_size
 
 
 def tokenize(sent):
@@ -170,41 +160,39 @@ def tokenize(sent):
     '''
     return [x.strip() for x in re.split('(\W+)?', sent) if x.strip()]
 
-# relations is set, other is list(), *2id is dict()
 
+def process_data(KB_file, data_file):
+    entities, relations = read_KB(KB_file)
+    words, data, sentence_size = read_data(data_file)
 
-def process_data(KB_file, data_file, word2id, rel2id, ent2id, words, relations, entities):
-    read_KB(KB_file, entities, relations)
-    data, sentence_size = read_data(data_file, words)
+    word2id = {}
+    ent2id = {}
+    rel2id = {}
 
-    # set ids
-    if len(word2id) == 0:
-        word2id['<unk>'] = 0
-    if len(rel2id) == 0:
-        rel2id['<end>'] = 0
-    if len(ent2id) == 0:
-        ent2id['<unk>'] = 0
+    word2id['<unk>'] = 0
+    rel2id['<end>'] = 0
+    ent2id['<unk>'] = 0
 
     for r in relations:
         # same r_id in rel2id and word2id
-        if not rel2id.has_key(r):
+        if r not in rel2id.keys():
             rel2id[r] = len(rel2id)
-        if not word2id.has_key(r):
+        if r not in word2id.keys():
             word2id[r] = len(word2id)
     for e in entities:
-        if not ent2id.has_key(e):
+        if e not in ent2id.keys():
             ent2id[e] = len(ent2id)
     for word in words:
-        if not word2id.has_key(word):
+        if word not in word2id.keys():
             word2id[word] = len(word2id)
 
-    print('here are %d words in word2id(vocab)' % len(word2id))  # 75080
-    print('here are %d relations in rel2id(rel_vocab)' % len(rel2id))  # 13+1
-    print('here are %d entities in ent2id(ent_vocab)' % len(ent2id))  # 13+1
+    print('here are %d words in word2id(vocab)' % len(word2id))
+    print('here are %d relations in rel2id(rel_vocab)' % len(rel2id))
+    print('here are %d entities in ent2id(ent_vocab)' % len(ent2id))
 
     Triples, KBs, tails_size = get_KB(KB_file, ent2id, rel2id)
 
-    print "#records or Triples", len(np.nonzero(KBs)[0])
+    print("The number of records or triples", len(np.nonzero(KBs)[0]))
 
     Q = []
     QQ = []
@@ -259,7 +247,4 @@ def process_data(KB_file, data_file, word2id, rel2id, ent2id, words, relations, 
         SS.append(anset)
 
    # return Q,A,P,D,QQ,AA,PP,DD,KBs,sentence_size,memory_size,tails_size
-    return np.array(Q), np.array(A), np.array(P), np.array(S), Triples, sentence_size
-
-
-if __name__ == "__main__":
+    return np.array(Q), np.array(A), np.array(P), np.array(S), Triples, sentence_size, word2id, ent2id, rel2id
