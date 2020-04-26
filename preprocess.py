@@ -112,6 +112,7 @@ def get_KB(KB_file, ent2id, rel2id):
         lenlist = tails[h*nrels+r]
         KBmatrix[h*nrels+r, lenlist] = t
         tails[h*nrels+r] += 1
+    
     return np.array(Triples), KBmatrix[:, :np.max(tails)], np.max(tails)
 
 
@@ -213,28 +214,21 @@ def process_data(KB_file, data_file):
         Q.append(q)
         QQ.append(query)
 
+
         a = np.zeros(len(ent2id))  # if use new ans-vocab, add 0 for 'end'
         a[ent2id[answer]] = 1
         A.append(a)
         AA.append(ent2id[answer])
 
-        #p = [ ent2id[path[0]], rel2id[path[1]], ent2id[path[2]], rel2id[path[3]], ent2id[path[4]] ]
-
         p = []
         for i in range(len(path)):
             if i % 2 == 0:
                 e = ent2id[path[i]]
-               # e = np.zeros(len(relations))
-               # e[0] = ent2id[path[i]]
                 p.append(e)
             else:
                 r = rel2id[path[i]]
-               # r = np.zeros(len(relations))
-               # r[rel2id[path[i]]] =1
                 p.append(r)
 
-        # p.append(rel2id[path[3]])
-        # p.append(ent2id[path[4]])
         P.append(p)
         PP.append(path)
 
@@ -246,5 +240,4 @@ def process_data(KB_file, data_file):
         S.append(ass)
         SS.append(anset)
 
-   # return Q,A,P,D,QQ,AA,PP,DD,KBs,sentence_size,memory_size,tails_size
     return np.array(Q), np.array(A), np.array(P), np.array(S), Triples, sentence_size, word2id, ent2id, rel2id
