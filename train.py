@@ -6,7 +6,7 @@ import torch.nn as nn
 import argparse
 import shutil
 from tqdm import tqdm
-from preprocess import process_data
+from preprocess import process_data, InSet, MultiAcc
 import numpy as np
 import time
 from sklearn import metrics
@@ -14,15 +14,14 @@ from sklearn.model_selection import train_test_split
 from model import IRN
 
 def train(args):
-    if not os.path.exists(args.checkpoint_dir):
-        os.makedirs(args.checkpoint_dir)
     KB_file = 'data/2H-kb.txt'
     data_file = 'data/2H.txt'
     start = time.time()
     Q,A,P,S,Triples,args.query_size, word2id, ent2id, rel2id = process_data(KB_file, data_file)
     args.path_size = len(P[0])
     args.nhop = args.path_size / 2
-    
+
+
     print ("read data cost %f seconds" %(time.time()-start))
     args.nwords = len(word2id) 
     args.nrels = len(rel2id) 
@@ -35,26 +34,58 @@ def train(args):
     n_test = testQ.shape[0]
     n_val = validQ.shape[0]
     print(trainQ.shape, trainA.shape,trainP.shape,trainS.shape)
-    
+
     # 找到答案所在的坐标
     train_labels = np.argmax(trainA, axis=1)
     test_labels = np.argmax(testA, axis=1)
     valid_labels = np.argmax(validA, axis=1)
-    batches = zip(range(0, n_train-args.batch_size, args.batch_size), range(args.batch_size, n_train, args.batch_size))
+    batches = list(zip(range(0, n_train-args.batch_size, args.batch_size), range(args.batch_size, n_train, args.batch_size)))
+    pre_batches = list(zip(range(0, Triples.shape[0]-args.batch_size, args.batch_size), range(args.batch_size, Triples.shape[0], args.batch_size)))
+
 
     model = IRN(args)
-    optimizer = optim.Adam(model.parameters(), args.lr,weight_decay=1e-5)
-    pre_batches = zip(range(0, Triples.shape[0]-args.batch_size, args.batch_size), range(args.batch_size, Triples.shape[0], args.batch_size))
+    optimizer = optim.Adam(model.parameters(), args.init_lr,weight_decay=1e-5)
     pre_val_preds = model.predict(Triples, validQ, validP)
     pre_test_preds = model.predict(Triples, testQ, testP)
-    criterion = nn.CrossEntropyLoss()
-    for t in range(0, args.nepoch):
-        model.train()
-        logits = model(Triples, trainQ,trainA,trainP, batches,pre_batches)
-        loss = criterion(logits, trainA)
-        optimizer.zero_grad()
-        loss.backward()
-    
+    for t in range(args.nepoch):
+        np.random.shuffle(batches)
+        for i in range(args.inner_nepoch):
+            np.random.shuffle(pre_batches)
+            pre_total_cost = 0.0
+            for s, e in pre_batches:
+                pretrain_loss = model.batch_pretrain(
+                    Triples[s:e], trainQ[0:args.batch_size],
+                    trainA[0:args.batch_size],
+                    np.argmax(trainA[0:args.batch_size],
+                            axis=1), trainP[0:args.batch_size])
+                optimizer.zero_grad()
+                pretrain_loss.backward()
+                optimizer.step()
+        total_cost = 0.0
+        
+        for s, e in batches:
+            total_cost = model(Triples[s:e], trainQ[s:e], trainA[s:e],
+                                        np.argmax(trainA[s:e], axis=1),
+                                        trainP[s:e])
+            optimizer.zero_grad()
+            total_cost.backward()
+            optimizer.step()
+        if t % 1 == 0:
+            
+            train_preds = model.predict(Triples,trainQ,trainP)
+            train_acc = MultiAcc(trainP,train_preds, model._path_size)
+            train_true_acc = InSet(trainP,trainS,train_preds)
+
+            val_preds = model.predict(Triples,validQ, validP)
+            val_acc = MultiAcc(validP,val_preds,model._path_size)
+            val_true_acc = InSet(validP,validS,val_preds)
+
+
+            print('-----------------------')
+            print('Epoch', t)
+            print('Train Accuracy:', train_true_acc)
+            print('Validation Accuracy:', val_true_acc)               
+            print('-----------------------')
 
 
 def main():

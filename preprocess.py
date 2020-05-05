@@ -5,6 +5,7 @@ import pickle
 import os
 import re
 import numpy as np
+from sklearn import metrics
 
 
 def read_triple(s, r, o, triples, entities, relations):
@@ -241,3 +242,43 @@ def process_data(KB_file, data_file):
         SS.append(anset)
 
     return np.array(Q), np.array(A), np.array(P), np.array(S), Triples, sentence_size, word2id, ent2id, rel2id
+
+def MultiAcc(labels,preds,length):
+    #length = path = 2 * hop + 1   (hop == path_l + cons_l + final == path_l * 2 + 1 )
+    #compare path and final answer accuracy
+    Acc = []
+
+    for i in range(length):
+        Acc.append(round(metrics.accuracy_score(labels[:,i],preds[:,i]),3))
+
+    batch_size = preds.shape[0]
+    correct = 0.0
+    for j in range(batch_size):
+        k = length - 1
+        while(labels[j,k]==0):
+            k -= 2
+        if(labels[j,k]==preds[j,k]):
+            correct += 1.0   #final answer accuracy 
+    Acc.append(round( correct/batch_size ,3))
+    return Acc
+
+def InSet(labels,anset,preds):
+    #get accuracy(whether in answer set or not)
+    #labels does not matter
+    #preds is path-list
+    #labels is path-labels
+    right = 0.0
+    for i in range(len(anset)):
+        if type(preds[i]) is np.int64:
+            ans_pred = preds[i]
+        else:
+            ans_pred = preds[i,-1]
+            '''
+            k = len(labels[0]) - 1
+            while(labels[i,k]==0):
+                k -= 2
+            ans_pred = preds[i,k]
+            '''
+        if ans_pred in anset[i]:
+            right += 1
+    return round(right/len(anset), 3)
